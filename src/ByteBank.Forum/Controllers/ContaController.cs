@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
 using Microsoft.Owin.Security;
+using System.Security.Claims;
 
 namespace ByteBank.Forum.Controllers
 {
@@ -100,6 +101,47 @@ namespace ByteBank.Forum.Controllers
             return View(modelo);
         }
 
+        [HttpPost]
+        public ActionResult RegistrarPorAutenticacaoExterna(string provider)
+        {
+            SignInManager.AuthenticationManager.Challenge(new AuthenticationProperties
+            {
+                RedirectUri = Url.Action("RegistrarPorAutenticacaoExternaCallback")
+            }, provider);
+
+            return new HttpUnauthorizedResult();
+        }
+
+        public async Task<ActionResult> RegistrarPorAutenticacaoExternaCallback()
+        {
+            var loginInfo = 
+                await SignInManager.AuthenticationManager.GetExternalLoginInfoAsync();
+
+            var usuarioExistente = await UserManager.FindByEmailAsync(loginInfo.Email);
+            if (usuarioExistente != null)
+                return View("Error");
+
+            var novoUsuario = new UsuarioAplicacao();
+
+            novoUsuario.Email = loginInfo.Email;
+            novoUsuario.UserName = loginInfo.Email;
+            novoUsuario.NomeCompleto =
+                loginInfo.ExternalIdentity.FindFirstValue(
+                        loginInfo.ExternalIdentity.NameClaimType
+                    );
+
+            var resultado = await UserManager.CreateAsync(novoUsuario);
+            if (resultado.Succeeded)
+            {
+                var resultadoAddLoginInfo =
+                    await UserManager.AddLoginAsync(novoUsuario.Id, loginInfo.Login);
+                if (resultadoAddLoginInfo.Succeeded)
+                    return RedirectToAction("Index", "Home");
+            }
+
+            return View("Error");
+        }
+
         private async Task EnviarEmailDeConfirmacaoAsync(UsuarioAplicacao usuario)
         {
             var token = await UserManager.GenerateEmailConfirmationTokenAsync(usuario.Id);
@@ -181,6 +223,29 @@ namespace ByteBank.Forum.Controllers
 
             // Algo de errado aconteceu
             return View(modelo);
+        }
+
+        [HttpPost]
+        public ActionResult LoginPorAutenticacaoExterna(string provider)
+        {
+            SignInManager.AuthenticationManager.Challenge(new AuthenticationProperties
+            {
+                RedirectUri = Url.Action("LoginPorAutenticacaoExternaCallback")
+            }, provider);
+
+            return new HttpUnauthorizedResult();
+        }
+
+        public async Task<ActionResult> LoginPorAutenticacaoExternaCallback()
+        {
+            var loginInfo = await SignInManager.AuthenticationManager.GetExternalLoginInfoAsync();
+
+            var signInResultado = await SignInManager.ExternalSignInAsync(loginInfo, true);
+
+            if (signInResultado == SignInStatus.Success)
+                return RedirectToAction("Index", "Home");
+
+            return View("Error");
         }
 
         public ActionResult EsqueciSenha()
